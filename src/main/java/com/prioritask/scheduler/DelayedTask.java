@@ -58,6 +58,9 @@ class DelayedTask implements Delayed {
 
     @Override
     public int compareTo(Delayed other) {
+        if (other instanceof DelayedTask that) {
+            return Long.compare(this.scheduledNanos, that.scheduledNanos);
+        }
         long diff = this.getDelay(TimeUnit.NANOSECONDS) - other.getDelay(TimeUnit.NANOSECONDS);
         return diff < 0 ? -1 : (diff > 0 ? 1 : 0);
     }
