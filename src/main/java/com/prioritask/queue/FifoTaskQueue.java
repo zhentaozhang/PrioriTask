@@ -42,14 +42,7 @@ public class FifoTaskQueue implements TaskQueue {
 
     @Override
     public int drainTo(Collection<? super Task<?>> c, int maxElements) {
-        int drained = 0;
-        while (drained < maxElements) {
-            Task<?> task = queue.poll();
-            if (task == null) break;
-            c.add(task);
-            drained++;
-        }
-        return drained;
+        return queue.drainTo(c, maxElements);
     }
 
     @Override

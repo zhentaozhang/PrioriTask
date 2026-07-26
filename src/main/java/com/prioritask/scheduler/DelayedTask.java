@@ -32,6 +32,19 @@ class DelayedTask implements Delayed {
 
     void cancel() {
         cancelled.set(true);
+        executed.countDown();
+    }
+
+    void markExecuted() {
+        executed.countDown();
+    }
+
+    void awaitExecution() throws InterruptedException {
+        executed.await();
+    }
+
+    boolean awaitExecution(long timeout, TimeUnit unit) throws InterruptedException {
+        return executed.await(timeout, unit);
     }
 
     long scheduledNanos() {
