@@ -12,22 +12,29 @@ public class WorkerPool {
 
     private final TaskQueue taskQueue;
     private final WorkerFactory workerFactory;
-    private final List<Worker> workers = new ArrayList<>();
-    private final List<Thread> threads = new ArrayList<>();
+    private final List<WorkerEntry> workers = new ArrayList<>();
     private final AtomicInteger activeCount = new AtomicInteger(0);
     private final long keepAliveNanos;
+    private final int batchSize;
+    private int restartCount;
+    private static final int MAX_RESTARTS = 10;
     private volatile TaskListener listener = new TaskListener() {};
     private volatile TaskExceptionHandler exceptionHandler = (t, e) -> {};
     private volatile boolean running = true;
 
     public WorkerPool(TaskQueue taskQueue, WorkerFactory workerFactory) {
-        this(taskQueue, workerFactory, TimeUnit.SECONDS.toNanos(60));
+        this(taskQueue, workerFactory, TimeUnit.SECONDS.toNanos(60), 32);
     }
 
     public WorkerPool(TaskQueue taskQueue, WorkerFactory workerFactory, long keepAliveNanos) {
+        this(taskQueue, workerFactory, keepAliveNanos, 32);
+    }
+
+    public WorkerPool(TaskQueue taskQueue, WorkerFactory workerFactory, long keepAliveNanos, int batchSize) {
         this.taskQueue = taskQueue;
         this.workerFactory = workerFactory;
         this.keepAliveNanos = keepAliveNanos;
+        this.batchSize = batchSize;
     }
 
     public TaskListener getTaskListener() {
@@ -39,19 +46,21 @@ public class WorkerPool {
     }
 
     public void setTaskListener(TaskListener listener) {
-        this.listener = listener;
+        TaskListener safe = listener != null ? listener : new TaskListener() {};
+        this.listener = safe;
         synchronized (workers) {
-            for (Worker w : workers) {
-                w.updateListener(listener);
+            for (WorkerEntry entry : workers) {
+                entry.worker.updateListener(safe);
             }
         }
     }
 
     public void setExceptionHandler(TaskExceptionHandler handler) {
-        this.exceptionHandler = handler;
+        TaskExceptionHandler safe = handler != null ? handler : (t, e) -> {};
+        this.exceptionHandler = safe;
         synchronized (workers) {
-            for (Worker w : workers) {
-                w.updateExceptionHandler(handler);
+            for (WorkerEntry entry : workers) {
+                entry.worker.updateExceptionHandler(safe);
             }
         }
     }
@@ -72,11 +81,10 @@ public class WorkerPool {
 
     private void startWorkerLocked() {
         if (!running) return;
-        Worker worker = new Worker(taskQueue, "worker-" + (workers.size() + 1), this, keepAliveNanos,
+        Worker worker = new Worker(taskQueue, "worker-" + (workers.size() + 1), this, keepAliveNanos, batchSize,
                                    listener, exceptionHandler);
         Thread thread = workerFactory.newThread(() -> runWorker(worker));
-        workers.add(worker);
-        threads.add(thread);
+        workers.add(new WorkerEntry(worker, thread));
         thread.start();
     }
 
@@ -85,7 +93,11 @@ public class WorkerPool {
         try {
             worker.run();
         } catch (Exception t) {
-            startWorker();
+            synchronized (workers) {
+                if (++restartCount < MAX_RESTARTS) {
+                    startWorkerLocked();
+                }
+            }
         } finally {
             activeCount.decrementAndGet();
         }
@@ -94,17 +106,19 @@ public class WorkerPool {
     public void shutdown() {
         running = false;
         synchronized (workers) {
-            for (Worker worker : workers) {
-                worker.shutdown();
+            for (WorkerEntry entry : workers) {
+                entry.worker.shutdown();
+                entry.thread.interrupt();
             }
         }
     }
 
     public void shutdownNow() {
-        shutdown();
+        running = false;
         synchronized (workers) {
-            for (Thread thread : threads) {
-                thread.interrupt();
+            for (WorkerEntry entry : workers) {
+                entry.worker.shutdown();
+                entry.thread.interrupt();
             }
         }
     }
@@ -113,7 +127,7 @@ public class WorkerPool {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
         List<Thread> snapshot;
         synchronized (workers) {
-            snapshot = new ArrayList<>(threads);
+            snapshot = workers.stream().map(e -> e.thread).toList();
         }
         for (Thread thread : snapshot) {
             long remaining = deadline - System.nanoTime();
@@ -132,13 +146,15 @@ public class WorkerPool {
         }
     }
 
+    public List<Worker> getWorkers() {
+        synchronized (workers) {
+            return workers.stream().map(e -> e.worker).toList();
+        }
+    }
+
     public int activeCount() {
         return activeCount.get();
     }
 
-    public List<Worker> getWorkers() {
-        synchronized (workers) {
-            return new ArrayList<>(workers);
-        }
-    }
+    private record WorkerEntry(Worker worker, Thread thread) {}
 }

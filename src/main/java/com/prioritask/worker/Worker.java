@@ -16,25 +16,32 @@ public class Worker implements Runnable {
     private final LongAdder tasksCompleted = new LongAdder();
     private final WorkerPool pool;
     private final long keepAliveNanos;
-    private TaskListener listener;
-    private TaskExceptionHandler exceptionHandler;
+    private final int batchSize;
+    private volatile TaskListener listener;
+    private volatile TaskExceptionHandler exceptionHandler;
     private volatile boolean running = true;
     private long lastTaskNanos = System.nanoTime();
 
     public Worker(TaskQueue taskQueue, String name, WorkerPool pool) {
-        this(taskQueue, name, pool, 0, pool.getTaskListener(), pool.getExceptionHandler());
+        this(taskQueue, name, pool, 0, 32, pool.getTaskListener(), pool.getExceptionHandler());
     }
 
     public Worker(TaskQueue taskQueue, String name, WorkerPool pool, long keepAliveNanos) {
-        this(taskQueue, name, pool, keepAliveNanos, pool.getTaskListener(), pool.getExceptionHandler());
+        this(taskQueue, name, pool, keepAliveNanos, 32, pool.getTaskListener(), pool.getExceptionHandler());
     }
 
     Worker(TaskQueue taskQueue, String name, WorkerPool pool, long keepAliveNanos,
+           TaskListener listener, TaskExceptionHandler exceptionHandler) {
+        this(taskQueue, name, pool, keepAliveNanos, 32, listener, exceptionHandler);
+    }
+
+    Worker(TaskQueue taskQueue, String name, WorkerPool pool, long keepAliveNanos, int batchSize,
            TaskListener listener, TaskExceptionHandler exceptionHandler) {
         this.taskQueue = taskQueue;
         this.name = name;
         this.pool = pool;
         this.keepAliveNanos = keepAliveNanos;
+        this.batchSize = batchSize;
         this.listener = listener;
         this.exceptionHandler = exceptionHandler;
     }
@@ -47,7 +54,7 @@ public class Worker implements Runnable {
                 Task<?> task = taskQueue.poll(500, TimeUnit.MILLISECONDS);
                 if (task != null) {
                     batch.add(task);
-                    taskQueue.drainTo(batch, 31);
+                    taskQueue.drainTo(batch, batchSize - 1);
                     for (int i = 0; i < batch.size(); i++) {
                         executeTask(batch.get(i));
                     }
@@ -67,7 +74,9 @@ public class Worker implements Runnable {
     }
 
     private void executeTask(Task<?> task) {
-        task.markRunning();
+        if (!task.markRunning()) {
+            return;
+        }
         listener.beforeExecute(Thread.currentThread(), task);
         if (keepAliveNanos > 0) {
             lastTaskNanos = System.nanoTime();
