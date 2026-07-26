@@ -1,5 +1,6 @@
 package com.prioritask.scheduler;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -9,6 +10,7 @@ class DelayedTask implements Delayed {
     private final Runnable command;
     private final long scheduledNanos;
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
+    private final CountDownLatch executed = new CountDownLatch(1);
 
     DelayedTask(Runnable command, long delay, TimeUnit unit) {
         this.command = command;
