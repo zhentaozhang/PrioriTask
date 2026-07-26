@@ -11,6 +11,7 @@ import com.prioritask.task.Task;
 import com.prioritask.worker.WorkerFactory;
 import com.prioritask.worker.WorkerPool;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,6 +26,12 @@ public class TaskScheduler {
     private volatile long shutdownNowTimeoutNanos = TimeUnit.SECONDS.toNanos(1);
 
     public TaskScheduler(int poolSize, int queueCapacity) {
+        if (poolSize <= 0) {
+            throw new IllegalArgumentException("poolSize must be positive: " + poolSize);
+        }
+        if (queueCapacity <= 0) {
+            throw new IllegalArgumentException("queueCapacity must be positive: " + queueCapacity);
+        }
         this.taskQueue = new PriorityTaskQueue(queueCapacity);
         this.workerPool = new WorkerPool(taskQueue, WorkerFactory.builder()
             .namePrefix("scheduler-worker")

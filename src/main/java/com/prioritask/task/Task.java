@@ -1,5 +1,6 @@
 package com.prioritask.task;
 
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
@@ -45,31 +46,27 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
     }
 
     public static <V> Task<V> of(Callable<V> callable) {
-        return new Task<>(callable, Priority.defaultPriority());
+        return new Task<>(Objects.requireNonNull(callable, "callable"), Priority.defaultPriority());
     }
 
     public static <V> Task<V> of(Callable<V> callable, Priority priority) {
-        return new Task<>(callable, priority);
+        return new Task<>(Objects.requireNonNull(callable, "callable"),
+                          Objects.requireNonNull(priority, "priority"));
     }
 
     public static Task<Void> ofRunnable(Runnable runnable) {
-        return new Task<>(runnable, Priority.defaultPriority());
+        return new Task<>(Objects.requireNonNull(runnable, "runnable"), Priority.defaultPriority());
     }
 
     public static Task<Void> ofRunnable(Runnable runnable, Priority priority) {
-        return new Task<>(runnable, priority);
+        return new Task<>(Objects.requireNonNull(runnable, "runnable"),
+                          Objects.requireNonNull(priority, "priority"));
     }
 
     public long taskId() { return taskId; }
     public Priority priority() { return priority; }
     public long submittedAt() { return submittedAt; }
-    public long startTime() {
-        long t = startTime;
-        if (t == 0) {
-            startTime = t = System.currentTimeMillis();
-        }
-        return t;
-    }
+    public long startTime() { return startTime; }
     public long finishTime() { return finishTime; }
     public V resultNow() { return result; }
     public TaskState state() { return state.get(); }
@@ -125,11 +122,12 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
         return result;
     }
 
-    public TaskState markRunning() {
+    public boolean markRunning() {
         if (!state.compareAndSet(TaskState.SUBMITTED, TaskState.RUNNING)) {
-            throw new IllegalStateException("Cannot mark as running from state: " + state.get());
+            return false;
         }
-        return TaskState.RUNNING;
+        startTime = System.currentTimeMillis();
+        return true;
     }
 
     public void awaitCompletion() throws InterruptedException {
@@ -154,7 +152,7 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
             state.set(TaskState.COMPLETED);
             finishTime = System.currentTimeMillis();
             return result;
-        } catch (Throwable e) {
+        } catch (Exception e) {
             exception = e;
             state.set(TaskState.FAILED);
             finishTime = System.currentTimeMillis();
