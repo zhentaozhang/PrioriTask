@@ -3,6 +3,8 @@ package com.prioritask.scheduler;
 import com.prioritask.common.RejectedExecutionException;
 import com.prioritask.core.LifecycleState;
 import com.prioritask.core.TaskScheduler;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,7 +29,12 @@ public class TimerScheduler {
             try {
                 DelayedTask delayed = queue.take();
                 if (!delayed.isCancelled()) {
-                    executor.submit(delayed.command());
+                    executor.submit(() -> {
+                        delayed.command().run();
+                        delayed.markExecuted();
+                    });
+                } else {
+                    delayed.markExecuted();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -77,6 +84,13 @@ public class TimerScheduler {
         );
         if (prev == LifecycleState.RUNNING) {
             schedulerThread.interrupt();
+            List<DelayedTask> remaining = new ArrayList<>();
+            queue.drainTo(remaining);
+            for (DelayedTask delayed : remaining) {
+                if (!delayed.isCancelled()) {
+                    executor.submit(delayed.command());
+                }
+            }
             state.set(LifecycleState.TERMINATED);
         }
     }
