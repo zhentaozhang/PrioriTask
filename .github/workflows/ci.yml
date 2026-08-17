@@ -8,23 +8,44 @@ on:
 
 jobs:
   build-and-test:
+    name: Build & Test (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [17, 21, 24]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
           cache: maven
 
-      - name: Build with Maven
-        run: mvn compile
+      - name: Compile
+        run: mvn -B compile
 
-      - name: Run Tests
-        run: mvn test
+      # Concurrency-heavy tests can be flaky; run the suite multiple times to
+      # surface intermittent failures instead of letting them through.
+      - name: Run tests (3 rounds, flakiness detection)
+        run: |
+          set -e
+          for i in 1 2 3; do
+            echo "=== Test round $i of 3 (JDK ${{ matrix.java }}) ==="
+            mvn -B test
+          done
 
       - name: Build JAR
-        run: mvn package -DskipTests
+        run: mvn -B package -DskipTests
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-jdk${{ matrix.java }}
+          path: target/surefire-reports/
+          retention-days: 7
+          if-no-files-found: warn
