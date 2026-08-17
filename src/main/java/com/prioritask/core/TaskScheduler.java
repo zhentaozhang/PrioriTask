@@ -60,6 +60,7 @@ public class TaskScheduler {
     }
 
     public <V> Task<V> execute(Task<V> task) {
+        Objects.requireNonNull(task, "task");
         if (state.get() != LifecycleState.RUNNING) {
             rejectedHandler.rejected(task, this);
             return null;

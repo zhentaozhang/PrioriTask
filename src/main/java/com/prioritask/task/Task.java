@@ -90,14 +90,13 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
     public boolean cancel() {
         while (true) {
             TaskState current = state.get();
-            if (current.isTerminal()) return false;
-            if (current == TaskState.RUNNING || current == TaskState.SUBMITTED) {
-                if (state.compareAndSet(current, TaskState.CANCELLED)) {
-                    completed.countDown();
-                    return true;
-                }
-            } else {
+            if (current.isTerminal()) {
                 return false;
+            }
+            // Only SUBMITTED and RUNNING are non-terminal; both may be cancelled.
+            if (state.compareAndSet(current, TaskState.CANCELLED)) {
+                completed.countDown();
+                return true;
             }
         }
     }
@@ -130,6 +129,48 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
         return true;
     }
 
+    /**
+     * Runs this task if it has not been cancelled.
+     *
+     * <p>State transitions are CAS-based so that a concurrent {@link #cancel()}
+     * is never overwritten: once a task is CANCELLED it stays CANCELLED even if
+     * the underlying callable/runnable completes or fails afterwards.
+     *
+     * @return the task result, or {@code null} if the task was cancelled
+     */
+    public V execute() {
+        TaskState s = state.get();
+        if (s.isTerminal()) {
+            // Never re-run a terminal task. countDown() is idempotent here and
+            // merely unblocks any concurrent waiter.
+            completed.countDown();
+            return s == TaskState.CANCELLED ? null : result;
+        }
+        // Direct callers may invoke execute() without markRunning(); promote SUBMITTED.
+        if (s == TaskState.SUBMITTED) {
+            state.compareAndSet(TaskState.SUBMITTED, TaskState.RUNNING);
+        }
+        try {
+            if (asRunnable != null) {
+                asRunnable.run();
+            } else {
+                result = callable.call();
+            }
+            finishTime = System.currentTimeMillis();
+            // If a concurrent cancel() won the race, this CAS fails and the
+            // task stays CANCELLED.
+            state.compareAndSet(TaskState.RUNNING, TaskState.COMPLETED);
+            return result;
+        } catch (Throwable e) {
+            exception = e;
+            finishTime = System.currentTimeMillis();
+            state.compareAndSet(TaskState.RUNNING, TaskState.FAILED);
+            return null;
+        } finally {
+            completed.countDown();
+        }
+    }
+
     public void awaitCompletion() throws InterruptedException {
         completed.await();
     }
@@ -138,33 +179,15 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
         return completed.await(timeout, unit);
     }
 
-    public V execute() {
-        try {
-            if (state.get() == TaskState.CANCELLED) {
-                completed.countDown();
-                return null;
-            }
-            if (asRunnable != null) {
-                asRunnable.run();
-            } else {
-                result = callable.call();
-            }
-            state.set(TaskState.COMPLETED);
-            finishTime = System.currentTimeMillis();
-            return result;
-        } catch (Exception e) {
-            exception = e;
-            state.set(TaskState.FAILED);
-            finishTime = System.currentTimeMillis();
-            return null;
-        } finally {
-            completed.countDown();
-        }
-    }
+
 
     @Override
     public int compareTo(Task<V> other) {
-        return priority.compareToPriority(other.priority);
+        int cmp = priority.compareToPriority(other.priority);
+        // Tie-break on submission order so that tasks with equal priority are
+        // dequeued strictly FIFO (PriorityBlockingQueue is otherwise unstable
+        // for equal elements).
+        return cmp != 0 ? cmp : Long.compare(taskId, other.taskId);
     }
 
     @Override

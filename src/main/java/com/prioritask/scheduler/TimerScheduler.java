@@ -28,12 +28,19 @@ public class TimerScheduler {
         while (state.get() == LifecycleState.RUNNING) {
             try {
                 DelayedTask delayed = queue.take();
-                if (!delayed.isCancelled()) {
+                if (delayed.isCancelled()) {
+                    delayed.markExecuted();
+                    continue;
+                }
+                try {
                     executor.submit(() -> {
                         delayed.command().run();
                         delayed.markExecuted();
                     });
-                } else {
+                } catch (RuntimeException e) {
+                    // Executor rejected the task (e.g. already shut down).
+                    // Mark it executed so awaitExecution()/get() do not block
+                    // forever, and keep the scheduler thread alive.
                     delayed.markExecuted();
                 }
             } catch (InterruptedException e) {

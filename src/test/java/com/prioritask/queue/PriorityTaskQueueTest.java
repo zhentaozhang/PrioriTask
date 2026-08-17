@@ -65,4 +65,21 @@ class PriorityTaskQueueTest {
         queue.offer(Task.ofRunnable(() -> {}));
         assertFalse(queue.isEmpty());
     }
+
+    @Test
+    void fifoOrderStableForManyEqualPriorityTasks() {
+        // Regression: PriorityBlockingQueue is unstable for equal elements;
+        // Task.compareTo now tie-breaks on submission order, guaranteeing FIFO.
+        TaskQueue queue = new PriorityTaskQueue(100);
+        int n = 100;
+        Task<?>[] submitted = new Task<?>[n];
+        for (int i = 0; i < n; i++) {
+            submitted[i] = Task.ofRunnable(() -> {}, Priority.MEDIUM);
+            queue.offer(submitted[i]);
+        }
+        for (int i = 0; i < n; i++) {
+            assertSame(submitted[i], queue.poll(), "FIFO order broken at index " + i);
+        }
+        assertNull(queue.poll());
+    }
 }

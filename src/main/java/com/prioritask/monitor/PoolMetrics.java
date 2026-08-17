@@ -2,6 +2,7 @@ package com.prioritask.monitor;
 
 import com.prioritask.common.TaskListener;
 import com.prioritask.task.Task;
+import java.util.Arrays;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -73,13 +74,14 @@ public class PoolMetrics implements TaskListener {
 
     private void record(long micros) {
         totalSamples.increment();
-        for (int i = 0; i < BUCKET_BOUNDARIES.length; i++) {
-            if (micros <= BUCKET_BOUNDARIES[i]) {
-                buckets[i].increment();
-                return;
-            }
+        int idx = Arrays.binarySearch(BUCKET_BOUNDARIES, micros);
+        if (idx < 0) {
+            idx = -idx - 1; // insertion point
         }
-        buckets[BUCKET_BOUNDARIES.length - 1].increment();
+        if (idx >= BUCKET_BOUNDARIES.length) {
+            idx = BUCKET_BOUNDARIES.length - 1; // overflow -> last bucket
+        }
+        buckets[idx].increment();
     }
 
     public double p50() {
@@ -98,9 +100,11 @@ public class PoolMetrics implements TaskListener {
         long total = totalSamples.sum();
         if (total == 0) return 0;
         long target = total * p / 100;
+        if (target <= 0) return 0;
         long cumulative = 0;
         for (int i = 0; i < BUCKET_BOUNDARIES.length; i++) {
             long count = buckets[i].sum();
+            if (count == 0) continue;
             cumulative += count;
             if (cumulative >= target) {
                 long lower = i == 0 ? 0 : BUCKET_BOUNDARIES[i - 1];
@@ -125,9 +129,11 @@ public class PoolMetrics implements TaskListener {
     }
 
     public double avgQueueWaitMicros() {
-        long completed = totalCompleted.sum();
-        if (completed == 0) return 0;
-        return (double) totalQueueWaitMicros.sum() / completed;
+        // Queue wait is only recorded for sampled executions, so the
+        // denominator must be the sample count, not totalCompleted.
+        long sampled = totalSamples.sum();
+        if (sampled == 0) return 0;
+        return (double) totalQueueWaitMicros.sum() / sampled;
     }
 
     public long maxQueueWaitMicros() {

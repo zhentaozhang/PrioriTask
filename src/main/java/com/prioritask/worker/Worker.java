@@ -77,7 +77,9 @@ public class Worker implements Runnable {
         if (!task.markRunning()) {
             return;
         }
-        listener.beforeExecute(Thread.currentThread(), task);
+        // Listener/handler failures must never kill the worker; otherwise a
+        // misbehaving observer would trigger restart churn in the pool.
+        safeNotify(() -> listener.beforeExecute(Thread.currentThread(), task));
         if (keepAliveNanos > 0) {
             lastTaskNanos = System.nanoTime();
         }
@@ -85,9 +87,19 @@ public class Worker implements Runnable {
         tasksCompleted.increment();
         Throwable error = task.exception();
         if (error != null) {
-            exceptionHandler.onError(task, error);
+            safeNotify(() -> exceptionHandler.onError(task, error));
         }
-        listener.afterExecute(task, error);
+        safeNotify(() -> listener.afterExecute(task, error));
+    }
+
+    private static void safeNotify(Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable t) {
+            if (t instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     public void shutdown() {
@@ -102,8 +114,8 @@ public class Worker implements Runnable {
         this.exceptionHandler = handler;
     }
 
-    public int tasksCompleted() {
-        return (int) tasksCompleted.sum();
+    public long tasksCompleted() {
+        return tasksCompleted.sum();
     }
 
     public String workerName() {

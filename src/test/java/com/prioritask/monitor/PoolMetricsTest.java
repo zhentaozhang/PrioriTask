@@ -70,6 +70,22 @@ class PoolMetricsTest {
     }
 
     @Test
+    void percentileIsFiniteWithSingleSampleInLaterBucket() {
+        // Regression: with a single sample not in the first bucket, the old
+        // cumulative-sum code divided by zero and produced NaN.
+        PoolMetrics metrics = new PoolMetrics();
+        Task<Void> task = Task.ofRunnable(() -> {});
+        task.markRunning();
+        metrics.beforeExecute(Thread.currentThread(), task);
+        try { Thread.sleep(5); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        metrics.afterExecute(task, null);
+        assertFalse(Double.isNaN(metrics.p50()), "p50 must not be NaN");
+        assertFalse(Double.isNaN(metrics.p99()), "p99 must not be NaN");
+        assertTrue(metrics.p50() >= 0);
+        assertTrue(metrics.p99() >= metrics.p50());
+    }
+
+    @Test
     void toStringContainsKeyMetrics() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         scheduler.submit(() -> { latch.countDown(); return null; });

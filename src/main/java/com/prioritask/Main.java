@@ -2,6 +2,7 @@ package com.prioritask;
 
 import com.prioritask.core.TaskScheduler;
 import com.prioritask.scheduler.TimerScheduler;
+import com.prioritask.task.Priority;
 import java.util.concurrent.TimeUnit;
 
 public class Main {
@@ -29,11 +30,11 @@ public class Main {
         System.out.println("\n--- Demo 2: Priority Task Ordering ---");
         TaskScheduler priorityPool = new TaskScheduler(1, 20);
 
-        priorityPool.submit(() -> { sleep(100); return null; }, com.prioritask.task.Priority.LOW);
-        priorityPool.submit(() -> { sleep(100); return null; }, com.prioritask.task.Priority.LOW);
-        priorityPool.submit(() -> { sleep(100); return null; }, com.prioritask.task.Priority.MEDIUM);
-        priorityPool.submit(() -> { sleep(100); return null; }, com.prioritask.task.Priority.HIGH);
-        priorityPool.submit(() -> { sleep(100); return null; }, com.prioritask.task.Priority.HIGH);
+        priorityPool.submit(() -> { sleep(100); return null; }, Priority.LOW);
+        priorityPool.submit(() -> { sleep(100); return null; }, Priority.LOW);
+        priorityPool.submit(() -> { sleep(100); return null; }, Priority.MEDIUM);
+        priorityPool.submit(() -> { sleep(100); return null; }, Priority.HIGH);
+        priorityPool.submit(() -> { sleep(100); return null; }, Priority.HIGH);
 
         Thread.sleep(1500);
         priorityPool.shutdown();
@@ -63,9 +64,9 @@ public class Main {
         long startTime = System.currentTimeMillis();
         for (int i = 1; i <= 50; i++) {
             final int num = i;
-            com.prioritask.task.Priority priority = num % 3 == 0 ? com.prioritask.task.Priority.HIGH
-                : num % 2 == 0 ? com.prioritask.task.Priority.MEDIUM
-                : com.prioritask.task.Priority.LOW;
+            Priority priority = num % 3 == 0 ? Priority.HIGH
+                : num % 2 == 0 ? Priority.MEDIUM
+                : Priority.LOW;
             stressPool.submit(() -> { sleep(50); return null; }, priority);
         }
 
