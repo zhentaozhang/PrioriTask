@@ -29,7 +29,7 @@ class TaskSchedulerTest {
         CountDownLatch latch = new CountDownLatch(1);
         Task<Void> future = scheduler.execute(Task.ofRunnable(latch::countDown));
         assertTrue(latch.await(2, TimeUnit.SECONDS));
-        assertTrue(future.isDone());
+        assertTrue(awaitDone(future));
     }
 
     @Test
@@ -45,7 +45,7 @@ class TaskSchedulerTest {
         CountDownLatch latch = new CountDownLatch(1);
         Task<Void> future = scheduler.submit(latch::countDown);
         assertTrue(latch.await(2, TimeUnit.SECONDS));
-        assertTrue(future.isDone());
+        assertTrue(awaitDone(future));
     }
 
     @Test
@@ -130,5 +130,13 @@ class TaskSchedulerTest {
         scheduler.shutdownNow();
         assertTrue(scheduler.awaitTermination(2, TimeUnit.SECONDS));
         assertTrue(scheduler.isTerminated());
+    }
+
+    private boolean awaitDone(Task<?> task) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (!task.isDone() && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        return task.isDone();
     }
 }
