@@ -106,11 +106,14 @@ class TaskSchedulerTest {
 
     @Test
     void shutdownNowDrainsAndReturnsQueuedTasks() throws Exception {
+        CountDownLatch running = new CountDownLatch(1);
         CountDownLatch block = new CountDownLatch(1);
         scheduler = new TaskScheduler(1, 10);
         scheduler.submit(() -> {
+            running.countDown();
             try { block.await(3, TimeUnit.SECONDS); } catch (Exception ignored) {}
         });
+        assertTrue(running.await(2, TimeUnit.SECONDS));
         Task<?> queued = scheduler.submit(() -> "not-executed");
         List<Task<?>> remaining = scheduler.shutdownNow();
         assertFalse(remaining.isEmpty());
