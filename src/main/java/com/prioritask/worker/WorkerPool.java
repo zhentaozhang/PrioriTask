@@ -116,7 +116,7 @@ public class WorkerPool {
         running = false;
         synchronized (workers) {
             for (WorkerEntry entry : workers) {
-                entry.worker.shutdown();
+                entry.worker.shutdownNow();
                 entry.thread.interrupt();
             }
         }

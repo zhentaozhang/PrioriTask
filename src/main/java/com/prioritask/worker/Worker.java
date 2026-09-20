@@ -20,6 +20,7 @@ public class Worker implements Runnable {
     private volatile TaskListener listener;
     private volatile TaskExceptionHandler exceptionHandler;
     private volatile boolean running = true;
+    private volatile boolean stopNow;
     private long lastTaskNanos = System.nanoTime();
 
     public Worker(TaskQueue taskQueue, String name, WorkerPool pool) {
@@ -49,7 +50,7 @@ public class Worker implements Runnable {
     @Override
     public void run() {
         List<Task<?>> batch = new ArrayList<>();
-        while (running || !taskQueue.isEmpty()) {
+        while (running || (!stopNow && !taskQueue.isEmpty())) {
             try {
                 Task<?> task = taskQueue.poll(500, TimeUnit.MILLISECONDS);
                 if (task != null) {
@@ -65,7 +66,7 @@ public class Worker implements Runnable {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                if (!taskQueue.isEmpty()) {
+                if (!stopNow && !taskQueue.isEmpty()) {
                     continue;
                 }
                 break;
@@ -104,6 +105,11 @@ public class Worker implements Runnable {
 
     public void shutdown() {
         running = false;
+    }
+
+    void shutdownNow() {
+        running = false;
+        stopNow = true;
     }
 
     void updateListener(TaskListener listener) {
