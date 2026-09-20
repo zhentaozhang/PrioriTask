@@ -90,4 +90,25 @@ class TimerSchedulerTest {
         handle.cancel(true);
         assertTrue(handle.isCancelled());
     }
+
+    @Test
+    void failedOneShotTaskDoesNotHangGet() throws Exception {
+        ScheduledTaskHandle handle = timer.schedule(
+            () -> { throw new RuntimeException("boom"); }, 10, TimeUnit.MILLISECONDS);
+        // A throwing command must still release the latch so get() completes
+        // instead of timing out forever.
+        assertDoesNotThrow(() -> handle.get(2, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void handleIsDoneReflectsExecution() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        ScheduledTaskHandle handle = timer.schedule(latch::countDown, 10, TimeUnit.MILLISECONDS);
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (!handle.isDone() && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertTrue(handle.isDone(), "isDone() should be true after the task executed");
+    }
 }

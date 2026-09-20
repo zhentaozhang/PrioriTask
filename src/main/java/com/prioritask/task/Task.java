@@ -146,9 +146,11 @@ public class Task<V> implements Comparable<Task<V>>, Future<V> {
             completed.countDown();
             return s == TaskState.CANCELLED ? null : result;
         }
-        // Direct callers may invoke execute() without markRunning(); promote SUBMITTED.
-        if (s == TaskState.SUBMITTED) {
-            state.compareAndSet(TaskState.SUBMITTED, TaskState.RUNNING);
+        // Direct callers may invoke execute() without markRunning(); promote
+        // SUBMITTED. markRunning() is CAS-based, so if a concurrent cancel()
+        // won the race the task body is never executed.
+        if (s == TaskState.SUBMITTED && !markRunning()) {
+            return null;
         }
         try {
             if (asRunnable != null) {

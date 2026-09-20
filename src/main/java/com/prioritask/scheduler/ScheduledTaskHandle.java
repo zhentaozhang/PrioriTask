@@ -26,6 +26,12 @@ public class ScheduledTaskHandle {
     }
 
     public boolean cancel(boolean mayInterruptIfRunning) {
+        if (delayedTask.isCancelled()) {
+            return false;
+        }
+        if (!isRecurring && delayedTask.isExecuted()) {
+            return false;
+        }
         delayedTask.cancel();
         if (isRecurring) {
             cancelled.set(true);
@@ -34,8 +40,7 @@ public class ScheduledTaskHandle {
     }
 
     public boolean isDone() {
-        if (delayedTask.isCancelled()) return true;
-        return false;
+        return delayedTask.isCancelled() || delayedTask.isExecuted();
     }
 
     public boolean isCancelled() {

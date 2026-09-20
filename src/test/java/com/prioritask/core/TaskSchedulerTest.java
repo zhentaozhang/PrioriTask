@@ -123,4 +123,12 @@ class TaskSchedulerTest {
         scheduler.shutdownNow();
         assertTrue(scheduler.awaitTermination(2, TimeUnit.SECONDS));
     }
+
+    @Test
+    void shutdownNowEventuallyTerminates() throws Exception {
+        scheduler = new TaskScheduler(2, 10);
+        scheduler.shutdownNow();
+        assertTrue(scheduler.awaitTermination(2, TimeUnit.SECONDS));
+        assertTrue(scheduler.isTerminated());
+    }
 }

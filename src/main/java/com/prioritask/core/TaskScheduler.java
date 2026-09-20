@@ -112,7 +112,9 @@ public class TaskScheduler {
         workerPool.shutdownNow();
         List<Task<?>> remaining = taskQueue.drainTo();
         try {
-            workerPool.awaitTermination(shutdownNowTimeoutNanos, TimeUnit.NANOSECONDS);
+            if (workerPool.awaitTermination(shutdownNowTimeoutNanos, TimeUnit.NANOSECONDS)) {
+                state.set(LifecycleState.TERMINATED);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

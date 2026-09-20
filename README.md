@@ -7,7 +7,6 @@
 [![Build Status](https://img.shields.io/github/actions/workflow/status/zhentaozhang/PrioriTask/ci.yml?style=flat-square)](https://github.com/zhentaozhang/PrioriTask/actions)
 [![Java 17](https://img.shields.io/badge/Java-17-3c873a?style=flat-square)](#)
 [![JMH](https://img.shields.io/badge/Benchmarked-JMH-0066ff?style=flat-square)](#)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 [概述](#概述) • [快速开始](#快速开始) • [使用指南](#使用指南) • [定时任务](#定时任务) • [监控](#监控) • [架构](#架构) • [基准测试](#基准测试)
 

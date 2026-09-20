@@ -43,6 +43,10 @@ class DelayedTask implements Delayed {
         executed.await();
     }
 
+    boolean isExecuted() {
+        return executed.getCount() == 0;
+    }
+
     boolean awaitExecution(long timeout, TimeUnit unit) throws InterruptedException {
         return executed.await(timeout, unit);
     }

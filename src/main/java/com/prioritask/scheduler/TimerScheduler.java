@@ -34,8 +34,14 @@ public class TimerScheduler {
                 }
                 try {
                     executor.submit(() -> {
-                        delayed.command().run();
-                        delayed.markExecuted();
+                        try {
+                            delayed.command().run();
+                        } finally {
+                            // Always release the latch, even if the command
+                            // throws, so awaitExecution()/get() never block
+                            // forever on a failed one-shot task.
+                            delayed.markExecuted();
+                        }
                     });
                 } catch (RuntimeException e) {
                     // Executor rejected the task (e.g. already shut down).
@@ -58,7 +64,7 @@ public class TimerScheduler {
     public ScheduledTaskHandle scheduleAtFixedRate(Runnable task, long initialDelay, long period, TimeUnit unit) {
         AtomicBoolean cancelled = new AtomicBoolean(false);
         long periodNanos = unit.toNanos(period);
-        FixedRateRunnable wrapper = new FixedRateRunnable(task, periodNanos, cancelled, queue);
+        FixedRateRunnable wrapper = new FixedRateRunnable(task, periodNanos, cancelled, state, queue);
         DelayedTask delayed = new DelayedTask(wrapper, initialDelay, unit);
         wrapper.setDelayedTask(delayed);
         return scheduleDelayed(delayed, cancelled);
@@ -67,14 +73,18 @@ public class TimerScheduler {
     public ScheduledTaskHandle scheduleWithFixedDelay(Runnable task, long initialDelay, long delay, TimeUnit unit) {
         AtomicBoolean cancelled = new AtomicBoolean(false);
         long delayNanos = unit.toNanos(delay);
-        FixedDelayRunnable wrapper = new FixedDelayRunnable(task, delayNanos, cancelled, queue);
+        FixedDelayRunnable wrapper = new FixedDelayRunnable(task, delayNanos, cancelled, state, queue);
         DelayedTask delayed = new DelayedTask(wrapper, initialDelay, unit);
         wrapper.setDelayedTask(delayed);
         return scheduleDelayed(delayed, cancelled);
     }
 
     private ScheduledTaskHandle scheduleDelayed(DelayedTask delayed) {
-        return scheduleDelayed(delayed, new AtomicBoolean(false));
+        if (state.get() != LifecycleState.RUNNING) {
+            throw new RejectedExecutionException("TimerScheduler is not running");
+        }
+        queue.put(delayed);
+        return new ScheduledTaskHandle(delayed);
     }
 
     private ScheduledTaskHandle scheduleDelayed(DelayedTask delayed, AtomicBoolean cancelled) {
@@ -109,28 +119,26 @@ public class TimerScheduler {
     private abstract static class RecurringRunnable implements Runnable {
         final Runnable delegate;
         final AtomicBoolean cancelled;
+        final AtomicReference<LifecycleState> schedulerState;
         final DelayQueue<DelayedTask> queue;
 
-        RecurringRunnable(Runnable delegate, AtomicBoolean cancelled, DelayQueue<DelayedTask> queue) {
+        RecurringRunnable(Runnable delegate, AtomicBoolean cancelled,
+                          AtomicReference<LifecycleState> schedulerState, DelayQueue<DelayedTask> queue) {
             this.delegate = delegate;
             this.cancelled = cancelled;
+            this.schedulerState = schedulerState;
             this.queue = queue;
         }
-
-        boolean isActive() {
-            return !cancelled.get();
-        }
-
-
     }
 
     private static class FixedRateRunnable extends RecurringRunnable {
         private final long periodNanos;
         private volatile DelayedTask currentDelayed;
-        private long iteration;
+        private volatile long iteration;
 
-        FixedRateRunnable(Runnable delegate, long periodNanos, AtomicBoolean cancelled, DelayQueue<DelayedTask> queue) {
-            super(delegate, cancelled, queue);
+        FixedRateRunnable(Runnable delegate, long periodNanos, AtomicBoolean cancelled,
+                          AtomicReference<LifecycleState> schedulerState, DelayQueue<DelayedTask> queue) {
+            super(delegate, cancelled, schedulerState, queue);
             this.periodNanos = periodNanos;
         }
 
@@ -142,7 +150,7 @@ public class TimerScheduler {
         public void run() {
             if (cancelled.get() || currentDelayed == null) return;
             delegate.run();
-            if (cancelled.get()) return;
+            if (cancelled.get() || schedulerState.get() != LifecycleState.RUNNING) return;
             iteration++;
             long nextNanos = currentDelayed.scheduledNanos() + periodNanos * iteration;
             DelayedTask next = new DelayedTask(this, nextNanos);
@@ -155,8 +163,9 @@ public class TimerScheduler {
         private final long delayNanos;
         private volatile DelayedTask currentDelayed;
 
-        FixedDelayRunnable(Runnable delegate, long delayNanos, AtomicBoolean cancelled, DelayQueue<DelayedTask> queue) {
-            super(delegate, cancelled, queue);
+        FixedDelayRunnable(Runnable delegate, long delayNanos, AtomicBoolean cancelled,
+                           AtomicReference<LifecycleState> schedulerState, DelayQueue<DelayedTask> queue) {
+            super(delegate, cancelled, schedulerState, queue);
             this.delayNanos = delayNanos;
         }
 
@@ -168,7 +177,7 @@ public class TimerScheduler {
         public void run() {
             if (cancelled.get() || currentDelayed == null) return;
             delegate.run();
-            if (cancelled.get()) return;
+            if (cancelled.get() || schedulerState.get() != LifecycleState.RUNNING) return;
             long nextNanos = System.nanoTime() + delayNanos;
             DelayedTask next = new DelayedTask(this, nextNanos);
             currentDelayed = next;
